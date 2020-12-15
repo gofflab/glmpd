@@ -18,8 +18,8 @@ library(tibble)
 library(dplyr)
 library(MASS)
 library(Polychrome)
-source("/home/jared/projects/projection_drivers/ENS/scripts/accessory_functions/fitHelper.R")
-source("/home/jared/ENS/Timecourse_ENS/scripts/accessory_functions/pattern_plotting.R")
+source("./accessory_functions/fitHelper.R")
+source("./accessory_functions/pattern_plotting.R")
 
 ```
 
@@ -27,7 +27,7 @@ source("/home/jared/ENS/Timecourse_ENS/scripts/accessory_functions/pattern_plott
 ```{r loadin, echo=F}
 # Load in required datsets and pweights --------------------------
 #dataset to project into.
-lmmp <- readRDS("/home/jared/ENS/Timecourse_ENS/TC_LMMP.rds")
+lmmp <- readRDS("../../data/jared/TC_LMMP.rds")
 #lmmp <- lmmp[fData(lmmp)$num_cells_expressed > 5,]
 lmmp
 genes_to_use <- rownames(lmmp)
@@ -36,7 +36,7 @@ previous.pattern.ind <- stringr::str_detect(colnames(pData(lmmp)), pattern = "Pa
 pData(lmmp) <- pData(lmmp)[,!previous.pattern.ind]
 
 #Previously learned gene weights from NMF on logscaled expression counts
-learned_weights <- read.csv(file = "/home/jared/ENS/6mo_LMMP/results/NMF/lmmp/lmmp_6mo_11-1_pattern_gene_weights.csv",
+learned_weights <- read.csv(file = "../../data/jared/lmmp_6mo_11-1_pattern_gene_weights.csv",
                             row.names = 1)
 npattern <- dim(learned_weights)[2]
 
@@ -46,7 +46,7 @@ load.existing.projection.values <- 1
 
 if(load.existing.projection.values){
   #first column is cell barcodes, rest of columns are patterns
-  transferred_cell_wts <- read.csv("/home/jared/projects/projection_drivers/ENS/results/TC_LMMP_in_6mo_LMMP_11-25_patterns.csv", row.names = 1)
+  transferred_cell_wts <- read.csv("../../data/jared/TC_LMMP_in_6mo_LMMP_11-25_patterns.csv", row.names = 1)
 }else{
   set.seed(539)
   target_cell_wts_list <- lapply(1:npattern, function(i){
