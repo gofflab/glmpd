@@ -1,12 +1,12 @@
 Package: glmpd
 Type: Package
-Title: What the Package Does (Title Case)
+Title: Identification of context-specific drivers of a pattern projection via GLM fitting.
 Version: 0.1.0
-Author: Who wrote it
-Maintainer: The package maintainer <yourself@somewhere.net>
+Author: Spiegel A*, Slosberg J*, Stein-O'Brien G☨, Goff LA☨
+Maintainer: Loyal A. Goff <loyalgoff@jhmi.edu>
 Description: More about what it does (maybe more than one line)
     Use four spaces when indenting paragraphs within the Description.
-License: What license is it under?
+License: MIT
 Encoding: UTF-8
 LazyData: true
 RoxygenNote: 7.1.1

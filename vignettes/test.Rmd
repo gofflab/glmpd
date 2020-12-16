@@ -1,0 +1,58 @@
+---
+title: "Alina Test"
+author: "Alina Spiegel"
+date: "12/16/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Test the getProjectionDrivers.R functions using data from the ALS analysis
+
+```{r imports}
+#source('getProjectionDrivers.R')
+#source('coeff_table_glmpd.R')
+library(glmpd)
+
+# Directories
+#dataDir <- 'data/'
+
+# load the counts mat, sample annotations, and projected p weights
+#countsMat <- readRDS(paste(dataDir,'humanCountsMat.rds',sep=''))
+countsMatFile <- system.file("extdata", "humanCountsMat.rds", package = "glmpd")
+countsMat <- readRDS(countsMatFile)
+#annotDF <- readRDS(paste(dataDir,'humanAnnotations.rds',sep=''))
+annotDFFile <- system.file("extdata","humanAnnotations.rds", package = "glmpd")
+annotDF <- readRDS(annotDFFile)
+#POIs <- readRDS(paste(dataDir,'sexPatts_0_9thresh.rds',sep='')) # patterns of interest
+POIsFile <- system.file("extdata","sexPatts_0_9thresh.rds", package = "glmpd")
+POIs <- readRDS(POIsFile)
+
+# limit to genes expressed in at least one sample
+totCounts <- apply(countsMat,1,sum)
+countsMat_exp <- countsMat[totCounts>0,]
+
+# order factors to obtain desired baseline categories in annotations map
+annotDF$group <- as.factor(as.character(annotDF$group))
+annotDF$group <- factor(annotDF$group,levels=levels(annotDF$group)[c(2,1,3)])
+
+# start by trying a couple patterns and a couple genes
+POIs_test <- POIs[7:8,] # 7 is female, 8 is male
+countsMat_exp_test <- countsMat_exp[c("XIST","IL22","TAGLN"),]
+
+# designate model parameters
+model_formula_str <- "~  patternWeights*sex + tissueType + patternWeights:tissueType + group + patternWeights:group"
+
+fits <- getProjectionDrivers(countsMat_exp_test,annotDF,POIs_test,model_formula_str)
+coeffTables <- coeff_table_glmpd(fits)
+
+DT::datatable(coeffTables)
+```
+
+
+# Session Information
+```{r}
+sessionInfo()
+```
+
