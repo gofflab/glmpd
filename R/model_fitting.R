@@ -28,12 +28,13 @@ fit_model_cds<-function(cds, model_formula_str, projected_patterns,exp_family="n
     pData(cds)["patternWeight"] <- projected_patterns[,pattern_name]
     glm_model <- monocle3::fit_models(cds = cds, model_formula_str = model_formula_str, expression_family = exp_family, cores = cores,
                                          clean_model = clean_model, verbose = verbose)
-  return(glm_model)
+    return(glm_model)
 
 
   })
   names(full_glm_models) <- pattern_names
-}
+  return(full_glm_models)
+  }
 
 # From Alina's code dump
 
