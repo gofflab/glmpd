@@ -5,8 +5,6 @@ library(dplyr)
 library(MASS)
 source("./R/jared/accessory_functions/extractCoefficients.R")
 
-#not currently using this
-source("./R/jared/accessory_functions/fitHelper.R")
 
 
 # Load in required datsets and pweights --------------------------
@@ -46,8 +44,10 @@ if(load.existing.projection.values){
   #write.csv(transferred_cell_wts,"/home/jared/projects/projection_drivers/ENS/results/TC_LMMP_in_6mo_LMMP_11-25_patterns.csv", quote = F)}
 }
 
-#Bind pattern weights to object
-pData(lmmp) <- cbind(pData(lmmp), transferred_cell_wts)
+#Bind pattern weights to object, make sure cells are exactly the same. Could left_merge but pData not being a true data.frame is an issue
+#assertthat::assert_that(sum(rownames(pData(lmmp)) == rownames(transferred_cell_wts)) == length(rownames(pData(lmmp))),
+#                        msg = "Cells in projection weights matrix are not the same as cells in cds object")
+#pData(lmmp) <- cbind(pData(lmmp), transferred_cell_wts)
 
 
 
@@ -61,17 +61,18 @@ genes_of_interest <- c("Hbb-bs", "Hba-a1","Hba-a2", "Malat1")
 genes <- c(fData(lmmp)$gene_short_name[1:1], genes_of_interest)
 
 #in the future iterate over patterns
-pattern_of_interest <- c(37) #RBC
+pattern_of_interest <- c(37,38) #RBC
 
 lmmp_sub <- lmmp[fData(lmmp)$gene_short_name %in% genes,]
 
-# "cell_type" and "cellPattern[number]" are columns in pData
-model_str <- paste0("~0 + cell_type*cellPattern",pattern_of_interest)
+projected_wts <- transferred_cell_wts[,paste0("cellPattern",pattern_of_interest)]
+# "cell_type" is a columns in pData
+model_str <- paste0("~0 + cell_type*patternWeight")
 exp_family <- "negbinomial"
 ncores = min(length(genes), 16)
 
-system.time(glm_models <- fit_models(cds = lmmp_sub, model_formula_str = model_str, expression_family = exp_family, cores = ncores,
-                                     clean_model = F, verbose = T))
+system.time(glm_models <- fit_model_cds(cds = lmmp_sub, model_formula_str = model_str, projected_patterns = projected_wts,
+                                        exp_family = exp_family, cores = ncores, clean_model = F, verbose = T))
 
 #TODO: if a model fails, make sure the genes are labelled appropriately
 #TODO: make wrapper function here?

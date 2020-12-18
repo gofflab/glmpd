@@ -5,8 +5,9 @@
 
 #' Fit Models (cds)
 #' This function wraps around monocle3::fit_model to parallelize glm models for a given pattern `pattern` across genes in a cds object
+#' As implemented now, this needs to be called for every pattern individually
 #' @param cds A monocle3 cell_data_set object
-#' @param pattern A vector of projected pattern weights to use as an explanatory variable in the model fit for each gene.
+#' @param projected_patterns A matrix of projected pattern weights to use as an explanatory variable in the model fit for each gene. colnames are patterns, rownames are cells.
 #' @param cores Integer defining the number of cores to use for parallelization of model fitting across genes.
 #' @param exp_family The regression family to use (default: 'negbinomial')
 #' @param clean_model Boolean.  Passed through to monocle3::fit_model
@@ -18,19 +19,21 @@
 #' @export
 #'
 # #' @examples
-fit_model_cds<-function(cds,pattern,cores,exp_family="negbinomial",clean_model=F,verbose=T){
-  #TODO: Add 'pattern' to cds unless already there
+fit_model_cds<-function(cds, model_formula_str, projected_patterns,exp_family="negbinomial",cores,clean_model=F,verbose=T){
+  #TODO: Should this monocle wrapper pull required info from the cds then call a "general" function
 
-  #TODO: As is this function assumes that 'cell_type' is a value in pData(cds).  We may want to just pass an argument for a model string if we are using values in pData(cds).
+  pattern_names <- colnames(projected_patterns)
 
-  # Create model formula string to include pattern of interest from 'pattern' argument
-  model_str <- paste0("~0 + cell_type*",pattern)
-  #exp_family <- "negbinomial" # set in args
-  #ncores = min(length(genes), 16) # set in args
-  glm_models <- monocle3::fit_models(cds = cds, model_formula_str = model_str, expression_family = exp_family, cores = cores,
-                                       clean_model = clean_model, verbose = verbose)
-  return(glm_models)
-  }
+  full_glm_models <- lapply(pattern_names, function(pattern_name){
+    pData(cds)["patternWeight"] <- projected_patterns[,pattern_name]
+    glm_model <- monocle3::fit_models(cds = cds, model_formula_str = model_formula_str, expression_family = exp_family, cores = cores,
+                                         clean_model = clean_model, verbose = verbose)
+  return(glm_model)
+
+
+  })
+  names(full_glm_models) <- pattern_names
+}
 
 # From Alina's code dump
 
