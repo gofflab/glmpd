@@ -24,7 +24,13 @@ fit_model_cds<-function(cds, model_formula_str, projected_patterns,exp_family="n
 
   pattern_names <- colnames(projected_patterns)
 
+  message(paste0("Fittings models for ", length(pattern_names), " patterns and ", dim(cds)[1], " genes"))
+  if(sum(rowSums(exprs(lmmp))== 0) > 0){
+    warnings(paste0(sum(rowSums(exprs(lmmp))== 0), " genes have zero expression and will not be successfully fit. It is recommended to remove them before running."))
+  }
+
   full_glm_models <- lapply(pattern_names, function(pattern_name){
+    message(paste0(date(),": working on pattern ",pattern_name))
     pData(cds)["patternWeight"] <- projected_patterns[,pattern_name]
     glm_model <- monocle3::fit_models(cds = cds, model_formula_str = model_formula_str, expression_family = exp_family, cores = cores,
                                          clean_model = clean_model, verbose = verbose)
@@ -34,7 +40,7 @@ fit_model_cds<-function(cds, model_formula_str, projected_patterns,exp_family="n
   })
   names(full_glm_models) <- pattern_names
   return(full_glm_models)
-  }
+}
 
 # From Alina's code dump
 

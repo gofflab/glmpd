@@ -1,14 +1,18 @@
 library(dplyr)
 
-extractCoefficients <- function(model, params = names(coef(model))){
+extractCoefficients <- function(model){
 
   #percent confidence interval for betas
     #This takes a super long time, what interpretations is this necessary for?
 
   #TODO: warning/error if parameters not in model
   #coef_conf_confint <- as.data.frame(confint(model, parm = params)) %>% tibble::rownames_to_column(var = "coefficient")
+  #print(coef(model))
 
-  coefs <- as.data.frame(coef(summary(model))) %>% tibble::rownames_to_column(var = "coefficient")
+  #pre-empt failed fits to return NA and continue
+  coefs <- NA
+
+  try(coefs <- as.data.frame(stats::coef(model)) %>% tibble::rownames_to_column(var = "coefficient"))
   #coef_df <- left_join(coefs, coef_conf_confint, by = "coefficient")
 
   return(coefs)

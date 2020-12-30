@@ -76,13 +76,14 @@ system.time(glm_models <- fit_model_cds(cds = lmmp_sub, model_formula_str = mode
 
 #TODO: if a model fails, make sure the genes are labelled appropriately
 #TODO: make wrapper function here?
-extracted_models <- unlist(as.list(glm_models[,"model"]), recursive = F)
-names(extracted_models) <- genes
+extracted_coefficients <- lapply(glm_models, function(glm_model){
+  extracted_models <- unlist(as.list(glm_model[,"model"]), recursive = F)
+  names(extracted_models) <- genes
 
-#for each model (one gene one pattern) grab beta estimates of interest, p-values for it being non-zero, confidence intervals
-extracted_coefficients <- lapply(extracted_models, FUN = extractCoefficients, params = c("cellPattern37", "cell_typeRBC", "cell_typeRBC:cellPattern37"))
+  #for each model (one gene one pattern) grab beta estimates of interest, p-values for it being non-zero, confidence intervals
+  extracted_coef <- lapply(extracted_models, FUN = extractCoefficients, params = c("cellPattern37", "cell_typeRBC", "cell_typeRBC:cellPattern37"))
 
-
+})
 #This is the way to implement outside of the monocle3 framework------
 do.manual.fit <- 0
 if(do.manual.fit){

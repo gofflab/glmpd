@@ -11,7 +11,7 @@
 #' @import monocle3
 #' @import ggplot2
 #' @import MASS
-#' @export <what does this function output?>
+#' @export
 #'
 #' @examples
 #' <add example code here for how to use this function>
