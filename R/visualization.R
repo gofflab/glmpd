@@ -60,4 +60,28 @@ plotPatternUsageByCondition <- function(feature, cds, conditions,  bin_by = NULL
 }
 
 
+#TODO: Add Roxygen2 parameters
+#Extract one parameter for all patterns for heatmap plotting
+#coefficient_list is the output from orderCoefficientByGene
+coefficientHeatmap <- function(coefficients_list, coefficient_to_plot){
+
+  pattern_full_names <- names(coefficients_list)
+  param_df <- lapply(pattern_full_names, function(pattern_full_name){
+    #pull each gene name and the coefficient to be plotted
+    param <- coefficients_list[[pattern_full_name]][,c("gene_short_name",coefficient_to_plot)]
+    #indexing isn't very elegant
+    colnames(param)[2] <- paste(colnames(param)[2],pattern_full_name, sep = "-")
+    return(param)
+  })
+
+  #combine each list (;attern) to one data frame. Columns are coefficients (one per pattern), rows are gene
+  param_merged_df <- param_df %>% purrr::reduce(left_join, by = "gene_short_name")
+
+  #Create heatmap for all genes, all patterns, one parameter
+  param_mat <- as.matrix(param_merged_df %>% tibble::column_to_rownames(var = "gene_short_name"))
+  pl <- ComplexHeatmap::Heatmap(param_mat, name = paste0("beta coefficient for ", coefficient_to_plot))
+
+  return(pl)
+}
+
 

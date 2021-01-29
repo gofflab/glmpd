@@ -7,39 +7,184 @@
 #' This function wraps around monocle3::fit_model to parallelize glm models for a given pattern `pattern` across genes in a cds object
 #' As implemented now, this needs to be called for every pattern individually
 #' @param cds A monocle3 cell_data_set object
-#' @param projected_patterns A matrix of projected pattern weights to use as an explanatory variable in the model fit for each gene. colnames are patterns, rownames are cells.
+#' @param model_formula_str A string specifying the model to fit, in the format "~ var1 + var2"
+#' @param projected_patterns A matrix of projected pattern weights to use as an explanatory variable in the model fit for each gene. colnames are patterns, rownames are cells. Must have viable column names.
 #' @param cores Integer defining the number of cores to use for parallelization of model fitting across genes.
 #' @param exp_family The regression family to use (default: 'negbinomial')
 #' @param clean_model Boolean.  Passed through to monocle3::fit_model
-#' @param verbose Boolean. Verbose output?
+#' @param verbose Boolean. Verbose output for model fitting.
+#' @param result Return full or summarized results. Summarized results are stripped of memory-intensive models and return coefficients from extractCoefficients().
 #'
 #' @return Returns a list of fitted models (output similar to monocle3::fit_model)
 #' @import monocle3
 #' @import MASS
+#' @import RhpcBLASctl
+#' @import future
+#' @import furrr
 #' @export
 #'
 # #' @examples
-fit_model_cds<-function(cds, model_formula_str, projected_patterns,exp_family="negbinomial",cores,clean_model=F,verbose=T){
+fit_model_cds<-function(cds, model_formula_str, projected_patterns,exp_family="negbinomial",cores,clean_model=T,verbose=T, result = "full_model"){
   #TODO: Should this monocle wrapper pull required info from the cds then call a "general" function
 
+  #from provided matrix
   pattern_names <- colnames(projected_patterns)
 
-  message(paste0("Fittings models for ", length(pattern_names), " patterns and ", dim(cds)[1], " genes"))
+  #dependent on SCE structure
+  genes <- rownames(cds)
+
+  message(paste0("Fittings models for ", length(pattern_names), " patterns and ", length(genes), " genes"))
   if(sum(rowSums(exprs(lmmp))== 0) > 0){
     warnings(paste0(sum(rowSums(exprs(lmmp))== 0), " genes have zero expression and will not be successfully fit. It is recommended to remove them before running."))
   }
 
-  full_glm_models <- lapply(pattern_names, function(pattern_name){
+  #Not actually sure what these do... other than limit conflicts with furrr multicore operations
+  RhpcBLASctl::omp_set_num_threads(1)
+  RhpcBLASctl::blas_set_num_threads(1)
+
+  #uses future parallelization structure
+  #open multicore operations
+  plan(multicore, workers = cores)
+  full_glm_models <- furrr::future_map(pattern_names, function(pattern_name){
     message(paste0(date(),": working on pattern ",pattern_name))
-    pData(cds)["patternWeight"] <- projected_patterns[,pattern_name]
-    glm_model <- monocle3::fit_models(cds = cds, model_formula_str = model_formula_str, expression_family = exp_family, cores = cores,
-                                         clean_model = clean_model, verbose = verbose)
-    return(glm_model)
+    pData(cds)[,"patternWeight"] <- projected_wts[,pattern_name]
 
+    #fit one pattern, all genes
+    glm_model <- monocle3::fit_models(cds = cds, model_formula_str = model_formula_str, expression_family = exp_family, cores = 1,
+                                      clean_model = clean_model, verbose = verbose)
 
+    if(result == "full_model"){
+      #returns tibble with a column that includes full model for each gene. memory hog
+      return(glm_model)
+    }
+
+    #return coefficients, estimates, [anything else] to be easier on memory. Create a multitiered list.
+    #top tiered list is pattern, second tiered list is gene, third tier is data.frame for those coefficients
+    #TODO: this is essentially extractCoefficients(). replace with that function
+    else if(result == "summarized_model"){
+      summarized_glm_model <- glm_model %>%
+        monocle3::coefficient_table() %>%
+        dplyr::select(-c(model, model_summary)) %>% as.data.frame()
+
+      summarized_glm_model <- purrr:::map(genes, function(gene){
+        summarized_glm_model %>% dplyr::filter(gene_id == gene)})
+
+      names(summarized_glm_model) <- genes_of_interest
+
+      return(summarized_glm_model)
+    }
   })
+
+  #close multicore operations
+  plan(sequential)
+
   names(full_glm_models) <- pattern_names
+
   return(full_glm_models)
+}
+
+
+#' Extract coefficients from model fitting object
+#' @param glm_models List (over patterns) of objects returned from "full_result" of fit_models_cds. Organizes each pattern by gene.
+#' @param genes ensembl gene ids that exactly match those which were provided to fit_models_cds
+#' @return Returns a list of fitted models (output similar to monocle3::fit_model)
+#' @import monocle3
+#' @import dplyr
+#' @export
+#'
+# #' @examples
+#TODO: assert genes length is the same as glm_models. Allow for "gene_id" to be set manually to allow other columns to match genes on.
+#TODO: is there a way to get gene names from models instead of providing... limit misnaming error ... also assumes orders are the same as is
+#Generates a multi-leveled list.
+#First level: pattern (named list)
+#Second level: gene (named list)
+#Third level: beta coefficients, columns are: coefficient name, coefficient
+extractCoefficients <- function(glm_models, genes){
+  extracted_coefficients <- lapply(glm_models, function(glm_model){
+
+    #Drop full models for memory effeciency. keeps parameters
+    summarized_glm_model <- glm_model %>%
+      monocle3::coefficient_table() %>%
+      dplyr::select(-c(model, model_summary)) %>% as.data.frame()
+
+    #organize with a list for each gene
+    summarized_glm_model <- purrr:::map(genes, function(gene){
+      summarized_glm_model %>% dplyr::filter(gene_id == gene)})
+
+    names(summarized_glm_model) <- genes_of_interest
+
+    return(summarized_glm_model)
+  })
+}
+
+
+#' Order model coefficient estimates by genes, such as for visualization by heatmap
+#' @param pattern_coefficient_list List (over patterns) of objects returned from "summarized_result" of fit_models_cds(), or extractCoefficients().
+#' @param coefficients_to_keep optional. limit returned dataframe to coefficients of interest.
+#' @param filter_significance Numeric value at which to q-value significance. If not provided, all genes returned.
+#' @param string optional. all parameters that contain this string will be used for signficance filtering.
+#' @return Returns a list of fitted models (output similar to monocle3::fit_model)
+#' @import dplyr
+#' @import tibble
+#' @export
+#'
+# #' @examples
+#Pass extracted coefficients to organize into a data frame with each gene as as a row ----
+#input is the output from extractCoefficients(), named list of lists, patterns then nested genes
+#TODO: Can make this more elegant with dplyr instead of lapply
+#TODO: filter out failed genes
+#TODO: Add Roxygen2 parameters
+orderCoefficientsByGene <- function(pattern_coefficient_list, coefficients_to_keep = NULL, filter_significance, string){
+  pattern_full_names <- names(pattern_coefficient_list)
+  #loop thru each pattern
+  params_list <- lapply(pattern_full_names, function(pattern_full_name){
+
+    genes <- names(pattern_coefficient_list[[pattern_full_name]])
+    #loop thru each gene
+    param_df <- lapply(genes, function(gene){
+
+      #pre-empt failed fits by creating a mini df with gene name
+      #failed genes will have parameters filled in with NA during bind_rows() below
+      param <- data.frame("gene_id" = gene)
+
+      #extract all parameters of interest. "term" is parameter name, "estimate" is the estimated beta value
+      try(param <- pattern_coefficient_list[[pattern_full_name]][[gene]] %>% dplyr::select(any_of(c("term","estimate","std_err","p_value","q_value","test_val"))) %>%
+            tibble::column_to_rownames(var = "term") %>% t() %>% as.data.frame() %>%
+            tibble::rownames_to_column(var = "measure") %>%
+            mutate("gene_id" = gene)
+      )
+
+      #if provided, restrict parameters to only these
+      if(!is.null(coefficients_to_keep)){
+        param <- param %>% dplyr::select(any_of(coefficients_to_keep))
+      }
+
+      #check if the minimum q-value for a gene is significant. If none are significant, return null to get rid of gene in df
+      #
+      if(!is.null(filter_significance)){
+        #pre-empt failure (Why would this fail? gene doesn't exist?)
+        min_q <- 1
+        try(min_q <- param %>% filter(measure == "q_value") %>% dplyr::select(matches(string)) %>% min())
+        #not significant
+        if(min_q > filter_significance){
+          return(NULL)
+        }
+      }
+
+      return(param)
+
+    })
+
+
+    #generate for each pattern a df, with tibbles for each parameter. allows for filtering on qvalue etc
+    tbl <- bind_rows(param_df) %>% group_by(measure) %>% nest() %>% ungroup()
+    return(tbl)
+  })
+
+  names(params_list) <- pattern_full_names
+
+  #list of dataframes, one df per pattern
+  return(params_list)
 }
 
 # From Alina's code dump
