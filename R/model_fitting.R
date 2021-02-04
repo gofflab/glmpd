@@ -34,8 +34,8 @@ fit_model_cds<-function(cds, model_formula_str, projected_patterns,exp_family="n
   genes <- rownames(cds)
 
   message(paste0("Fittings models for ", length(pattern_names), " patterns and ", length(genes), " genes"))
-  if(sum(rowSums(exprs(lmmp))== 0) > 0){
-    warnings(paste0(sum(rowSums(exprs(lmmp))== 0), " genes have zero expression and will not be successfully fit. It is recommended to remove them before running."))
+  if(sum(rowSums(exprs(cds))== 0) > 0){
+    warnings(paste0(sum(rowSums(exprs(cds))== 0), " genes have zero expression and will not be successfully fit. It is recommended to remove them before running."))
   }
 
   #Not actually sure what these do... other than limit conflicts with furrr multicore operations
@@ -47,7 +47,7 @@ fit_model_cds<-function(cds, model_formula_str, projected_patterns,exp_family="n
   plan(multicore, workers = cores)
   full_glm_models <- furrr::future_map(pattern_names, function(pattern_name){
     message(paste0(date(),": working on pattern ",pattern_name))
-    pData(cds)[,"patternWeight"] <- projected_wts[,pattern_name]
+    pData(cds)[,"patternWeight"] <- projected_patterns[,pattern_name]
 
     #fit one pattern, all genes
     glm_model <- monocle3::fit_models(cds = cds, model_formula_str = model_formula_str, expression_family = exp_family, cores = 1,
