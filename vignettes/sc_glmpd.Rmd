@@ -46,6 +46,7 @@ projected_weights <- read.csv("../inst/extdata/6mo_LMMP_cell_size_log_in_TC_LMMP
 
 ```
 
+## Prepare the cell data set and projection values for the model fittings
 ```{r prepare_cds}
 #pattern # to project
 select_patterns <- c(27,43)
@@ -81,7 +82,7 @@ if(downsample){
 
 cds_sub
 ```
-
+## Declare the model formula and run model fittings
 ```{r run_model_fit, warning = F}
 #patternWeight is hard-coded in the fit_models_cds function to be the p-weights column provided
 model_str <- paste0("~0 + patternWeight:cell_type + cell_type")
@@ -93,8 +94,14 @@ ncores = 1
 #return the full glm output
 return_option <- "full_model"
 
-system.time(glm_models_list <- fit_model_cds(cds = cds_sub, model_formula_str = model_str, projected_patterns = projected_weights,
-                                          exp_family = exp_family, cores = ncores, clean_model = F, verbose = T, result = return_option))
+system.time(glm_models_list <- fit_model_cds(cds = cds_sub,
+                                             model_formula_str = model_str,
+                                             projected_patterns = projected_weights,
+                                             exp_family = exp_family,
+                                             cores = ncores,
+                                             clean_model = F,
+                                             verbose = T,
+                                             result = return_option))
 
 class(glm_models_list)
 length(glm_models_list)
@@ -103,7 +110,7 @@ names(glm_models_list)
 #model results for first pattern
 purrr::pluck(glm_models_list, paste0("cellPattern",select_patterns[1]))
 ```
-
+## Extract parameter estimates, standard errors, p-value, etc from the model object
 Model fittings are complete, now we can extract the relevant info from the models using extractCoefficients(). The first order list is always the patterns. Provided the genes used in the fittings above, it generates a data frame for each gene with each row representing one of the model parameters, and each column representing a measurement (eg. estimate, p-value...). 
 ```{r extract_model_coefficients}
 #genes vector is used to pull parameter estimates from the model info for each gene. Must be the same as provided in the cds_sub that is fitted
@@ -118,13 +125,82 @@ purrr::pluck(extracted_coefficients_list, paste0("cellPattern",select_patterns[1
 
 ```
 
+## Re-organize by creating a data frame for each "measurement" from the model
 ```{r order_by_gene}
 
+#filter significance will filter genes to ones that are signficant (q-value) at the provided threshold (eg 0.05).
+#string matching to the string provided. For categorical variables/dummy variables, genes are maintained if any of variables in that group are significant
 gene_coefficients_list <- orderCoefficientsByGene(extracted_coefficients_list, filter_significance = NULL, string = NULL)
-gene_coefficients_list
+
+purrr::pluck(gene_coefficients_list, paste0("cellPattern", select_patterns[1]))
+
+purrr::pluck(gene_coefficients_list, paste0("cellPattern", select_patterns[1])) %>%
+  dplyr::filter(measure == "estimate") %>%
+  dplyr::select(data) %>%
+  unnest(cols = data) %>% 
+  as.data.frame()
 
 ```
+## Generate matrices, and visualize results as a heatmap
+```{r visualize_heatmap, warning=F, fig.dim = c(12, 6)}
+#Generate matrices for heatmap plotting.
+#terms_match are selected based on matching the beginning of the parameter strings. terms_exact are selected on exact matches.
+#feature corresponds to which measure of gene_coefficients_list (above) will be plotted
+#gene_name specifies name of column that contains gene_names. default is gene_id
+#Transpose flips matrix for plotting genes as columns, parameters as rows
+coefficient_matrix_list <- organizeEstimates(gene_coefficients_list, 
+                                             terms_exact = NULL,  
+                                             terms_match = c("patternWeight:cell_type", "cell_type"),
+                                             feature = "estimate",
+                                             transpose = T,
+                                             gene_name = "gene_id")
 
+names(coefficient_matrix_list)
+names(purrr::pluck(coefficient_matrix_list, paste0("cellPattern", select_patterns[1])))
+purrr::pluck(coefficient_matrix_list, paste0("cellPattern", select_patterns[1]), "patternWeight:cell_type")[,1:4]
+
+#I left the actual heatmap plotting outside any functions because its so specific and customizable
+heatmap_list <- purrr::map(names(coefficient_matrix_list), function(pattern_name){
+  
+  #FIRST HEATMAP, clustering of columns based on this one
+  term <- "patternWeight:cell_type"
+  
+  #extract dataframe of estimates for this pattern, for this set of parameters. Rows are parameters, columns are genes
+  match <- coefficient_matrix_list %>% purrr::pluck(pattern_name, term)
+  
+  ##order rows here, but they already alphabetical. 
+  match <- match[order(rownames(match)),]
+  
+  #show gene_names if less than some number of genes
+  do.show.col.names <- (dim(match)[2] < 200)
+  
+  hm1 <- ComplexHeatmap::Heatmap(match, name = paste0(term, ": ", pattern_name))
+  
+  #base cell_type factors on this ordering (which is after clustering in heatmap)
+  ord <- row_order(hm1)
+  
+  #SECOND HEATMAP
+  term <- "cell_type"
+  
+  #extract dataframe of estimates for this pattern, for this set of parameters. Rows are parameters, columns are genes
+  match2<- coefficient_matrix_list %>% purrr::pluck(pattern_name, term, row_names_gp = gpar(fontsize = c(8)))
+  
+  ##order rows here, but they already alphabetical. 
+  match2 <- match2[order(rownames(match2)),]
+  row_order <- rownames(match2)[ord]
+  
+  hm2 <- ComplexHeatmap::Heatmap(match2, name = paste0(term, ": ", pattern_name), cluster_rows = F,
+                                 row_order = row_order,  row_names_gp = gpar(fontsize = c(8)), show_column_names = do.show.col.names)
+  
+  #vertical heatmap merging
+  heatmap_merge <- hm1  %v% hm2
+  
+  return(heatmap_merge)
+
+})
+
+heatmap_list
+```
 
 
 

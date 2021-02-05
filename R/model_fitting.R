@@ -187,6 +187,64 @@ orderCoefficientsByGene <- function(pattern_coefficient_list, coefficients_to_ke
   return(params_list)
 }
 
+##functionalize making of heatmap matrix
+##coefficients_list should be output from orderCoefficientsByGene(). List for each pattern, containing a tibble with estimate, std error, pvalue...
+##with tranpose = F (default), rownames are genes, colnames are model parameters
+organizeEstimates <- function(coefficients_list, terms_exact, terms_match, feature = "estimate", gene_name = "gene_id", transpose = F){
+
+  param_list <- purrr::map(names(coefficients_list), function(pattern_name){
+    #contains tibbles for each measure, eg. estimate, std error, p-value.
+    gene_coef_df<- coefficients_list[[pattern_name]] %>% filter(measure == feature) %>%
+      dplyr::select(data) %>%
+      unnest(cols =data)
+
+    #add gene_short_name
+    #gene_coef_df <- left_join(gene_coef_df, gene_mapping)
+
+    if(!is.null(rownames(gene_coef_df))){
+      message("Warning: existing rownames may be removed")
+      rownames(gene_coef_df) <- NULL
+    }
+
+    #remove genes that did not fit any model (ie rows that are all NA)
+    rm.ind <- which(apply(gene_coef_df, 1, function(x) all(is.na(x))))
+    if(length(rm.ind) > 0) {
+      message(paste0("Removing ", length(rm.ind), " genes that did not have any successful fits"))
+      gene_coef_df <- gene_coef_df[-c(rm.ind),]
+    }
+
+    #organize coefficients for these parameters, match parameter name exactly
+    exact_parameters <- purrr::map(terms_exact, function(term){
+      exact <- gene_coef_df %>% dplyr::select(c(all_of(term),all_of(gene_name))) %>% column_to_rownames(var = gene_name) %>% as.matrix()
+
+      exact <- exact[,order(colnames(exact))]
+      if(transpose){
+        exact <- t(exact)
+      }
+
+    })
+    names(exact_parameters) <- terms_exact
+
+    #organize coefficients for these parameters, match parameter name with starting string
+    matched_parameters <- purrr:::map(terms_match, function(term){
+      match <- gene_coef_df %>% dplyr::select(c(starts_with(term), gene_name)) %>% column_to_rownames(var = gene_name) %>% as.matrix()
+
+      match <- match[,order(colnames(match))]
+      if(transpose){
+        match <- t(match)
+      }
+    })
+    names(matched_parameters) <- terms_match
+
+    #for each pattern, return lists with matrix of coefficients for each provided parameter
+    parameters_list <- c(exact_parameters, matched_parameters)
+
+  })
+  names(param_list) <- names(coefficients_list)
+  return(param_list)
+}
+
+
 # From Alina's code dump
 
 #' fit_helper
