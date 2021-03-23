@@ -1,0 +1,57 @@
+---
+title: "bulk_glmpd"
+author: "Alina Spiegel"
+date: "3/23/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This workbook demonstrates how to find projection drivers -- the genes that drive the projection of a latent space into a cell type or condition in a new dataset -- with a GLM-based approach. Here, we analyze nnmf patterns that have been projected into a bulk RNA sequencing dataset.
+
+```{r init, message = F, warning=F}
+
+#Directories are relative to this .Rmd file in vignettes folder
+dataDir <- '../inst/extdata/'
+
+library(glmpd)
+```
+
+Load the counts x samples expression matrix, annotations for samples, and projected p-weights (patterns x samples) 
+
+```{r import}
+# load the counts mat, sample annotations, and projected p weights
+countsMat <- readRDS(paste(dataDir,'humanCountsMat.rds',sep=''))
+annotDF <- readRDS(paste(dataDir,'humanAnnotations.rds',sep=''))
+POIs <- readRDS(paste(dataDir,'sexPatts_0_9thresh.rds',sep='')) # patterns of interest
+
+# limit to genes expressed in at least one sample
+totCounts <- apply(countsMat,1,sum)
+countsMat_exp <- countsMat[totCounts>0,]
+```
+
+If desired, limit to specific genes and patterns of interest. In this case, we will test just a few genes and patterns. Also order categorical annotations to establish the appropriate baseline categories.
+
+```{r prepare_countsAndPatterns}
+# order factors to obtain desired baseline categories in annotations map
+annotDF$group <- as.factor(as.character(annotDF$group))
+annotDF$group <- factor(annotDF$group,levels=levels(annotDF$group)[c(2,1,3)])
+
+# start by trying a couple patterns and a couple genes
+POIs_test <- POIs[7:8,] # 7 is female, 8 is male
+countsMat_exp_test <- as.matrix(countsMat_exp[c("XIST","IL22","TAGLN"),])
+```
+
+Fit a glm to find condition-specific genes driving the projection
+
+```{r fit_glm}
+# designate model parameters
+model_formula_str <- "~  patternWeights*sex + tissueType + patternWeights:tissueType + group + patternWeights:group"
+
+#fits <- getProjectionDrivers(countsMat_exp_test,annotDF,POIs_test,model_formula_str)
+fits <- fitGLMpd(countsMat_exp_test,annotDF=annotDF,model_formula_str=model_formula_str,projected_patterns = t(POIs_test))
+coeffTables <- coeff_table_glmpd(fits)
+```
+

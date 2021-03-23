@@ -2,6 +2,83 @@
 # Functions for parallelization and fitting of GLM models
 ###########################################################
 
+#' .fitGLM
+#' This function parallelizes glm models:
+#' Parallelizes across genes in a counts matrix
+#' Parallelizes across patterns in a matrix of projected patterns
+#' @param countsMatrix matrix of gene expression counts. genes x cells / samples.
+#' @param annotDF A dataframe with annotations for each cell or sample in the gene expression dataset
+#' @param model_formula_str A string specifying the model to fit, in the format "~ var1 + var2"
+#' @param projected_patterns A matrix of projected pattern weights to use as an explanatory variable in the model fit for each gene. colnames are patterns, rownames are cells. Must have viable column names.
+#' @param cores Integer defining the number of cores to use for parallelization of model fitting across genes.
+#' @param exp_family The regression family to use (default: 'negbinomial')
+#' @param clean_model Boolean.  Passed through to monocle3::fit_model
+#' @param verbose Boolean. Verbose output for model fitting.
+#' @param result Return full or summarized results. Summarized results are stripped of memory-intensive models and return coefficients from extractCoefficients().
+#'
+#' @return Returns a list of fitted models (output similar to monocle3::fit_model)
+#' @import monocle3
+#' @import MASS
+#' @import RhpcBLASctl
+#' @import future
+#' @import furrr
+.fitGLM <- function(countsMatrix, annotDF, model_formula_str, projected_patterns, cores){
+
+  #from provided matrix
+  pattern_names <- colnames(projected_patterns)
+
+  #dependent on SCE structure
+  genes <- rownames(countsMatrix)
+
+  message(paste0("Fittings models for ", length(pattern_names), " patterns and ", length(genes), " genes"))
+  if(sum(rowSums(countsMatrix)== 0) > 0){
+    warnings(paste0(sum(rowSums(countsMatrix)== 0), " genes have zero expression and will not be successfully fit. It is recommended to remove them before running."))
+  }
+
+  #Not actually sure what these do... other than limit conflicts with furrr multicore operations
+  RhpcBLASctl::omp_set_num_threads(1)
+  RhpcBLASctl::blas_set_num_threads(1)
+
+  #uses future parallelization structure
+  #open multicore operations
+  plan(multicore, workers = cores)
+  full_glm_models <- furrr::future_map(pattern_names, function(pattern_name){
+    message(paste0(date(),": working on pattern ",pattern_name))
+    thisPatt <- projected_patterns[,pattern_name]
+
+    #fit one pattern, all genes
+    glm_model <- apply(countsMatrix,1,fit_helper,thisPattern=thisPatt,model_formula_string=model_formula_str,annotDF=annotDF)
+
+    #if(result == "full_model"){
+    #returns tibble with a column that includes full model for each gene. memory hog
+    return(glm_model)
+    #}
+
+    #return coefficients, estimates, [anything else] to be easier on memory. Create a multitiered list.
+    #top tiered list is pattern, second tiered list is gene, third tier is data.frame for those coefficients
+    #TODO: this is essentially extractCoefficients(). replace with that function
+    #else if(result == "summarized_model"){
+    #  summarized_glm_model <- glm_model %>%
+    #    monocle3::coefficient_table() %>%
+    #    dplyr::select(-c(model, model_summary)) %>% as.data.frame()
+
+    #  summarized_glm_model <- purrr:::map(genes, function(gene){
+    #    summarized_glm_model %>% dplyr::filter(gene_id == gene)})
+
+    #  names(summarized_glm_model) <- genes_of_interest
+
+    #  return(summarized_glm_model)
+    #}
+  })
+
+  #close multicore operations
+  plan(sequential)
+
+  names(full_glm_models) <- pattern_names
+
+  return(full_glm_models)
+}
+
 #' fit_helper
 #'
 #' @param thisGene String of gene name
@@ -39,8 +116,7 @@ fit_helper <- function(thisGene, thisPattern, model_formula_string, annotDF){
 }
 
 #' fitGLMpd
-#' This function parallelizes glm models for a given pattern `pattern` across genes in a cds object
-#' Parallelizes across patterns in a matrix of projected patterns
+#' Uses a GLM to identify the set of genes used in a pattern for a given cell type or condition
 #' @param countsMatrix matrix of gene expression counts. genes x cells / samples.
 #' @param annotDF A dataframe with annotations for each cell or sample in the gene expression dataset
 #' @param model_formula_str A string specifying the model to fit, in the format "~ var1 + var2"
@@ -53,10 +129,6 @@ fit_helper <- function(thisGene, thisPattern, model_formula_string, annotDF){
 #'
 #' @return Returns a list of fitted models (output similar to monocle3::fit_model)
 #' @import monocle3
-#' @import MASS
-#' @import RhpcBLASctl
-#' @import future
-#' @import furrr
 #' @export
 #'
 # #' @examples
@@ -67,103 +139,17 @@ setMethod("fitGLMpd",signature(object="cell_data_set"), function(object, model_f
 
   cds <- object
 
-  #TODO: Should this monocle wrapper pull required info from the cds then call a "general" function
   countsMatrix <- exprs(cds)
   annotDF <- pData(cds)
 
-  #from provided matrix
-  pattern_names <- colnames(projected_patterns)
-
-  #dependent on SCE structure
-  genes <- rownames(countsMatrix)
-
-  message(paste0("Fittings models for ", length(pattern_names), " patterns and ", length(genes), " genes"))
-  if(sum(rowSums(countsMatrix)== 0) > 0){
-    warnings(paste0(sum(rowSums(countsMatrix)== 0), " genes have zero expression and will not be successfully fit. It is recommended to remove them before running."))
-  }
-
-  #Not actually sure what these do... other than limit conflicts with furrr multicore operations
-  RhpcBLASctl::omp_set_num_threads(1)
-  RhpcBLASctl::blas_set_num_threads(1)
-
-  #uses future parallelization structure
-  #open multicore operations
-  plan(multicore, workers = cores)
-  full_glm_models <- furrr::future_map(pattern_names, function(pattern_name){
-    message(paste0(date(),": working on pattern ",pattern_name))
-    thisPatt <- projected_patterns[,pattern_name]
-
-    #fit one pattern, all genes
-    glm_model <- apply(countsMatrix,1,fit_helper,thisPattern=thisPatt,model_formula_string=model_formula_str,annotDF=annotDF)
-
-    #if(result == "full_model"){
-      #returns tibble with a column that includes full model for each gene. memory hog
-      return(glm_model)
-    #}
-
-    #return coefficients, estimates, [anything else] to be easier on memory. Create a multitiered list.
-    #top tiered list is pattern, second tiered list is gene, third tier is data.frame for those coefficients
-    #TODO: this is essentially extractCoefficients(). replace with that function
-    #else if(result == "summarized_model"){
-    #  summarized_glm_model <- glm_model %>%
-    #    monocle3::coefficient_table() %>%
-    #    dplyr::select(-c(model, model_summary)) %>% as.data.frame()
-
-    #  summarized_glm_model <- purrr:::map(genes, function(gene){
-    #    summarized_glm_model %>% dplyr::filter(gene_id == gene)})
-
-    #  names(summarized_glm_model) <- genes_of_interest
-
-    #  return(summarized_glm_model)
-    #}
-  })
-
-  #close multicore operations
-  plan(sequential)
-
-  names(full_glm_models) <- pattern_names
-
-  return(full_glm_models)
+  .fitGLM(countsMatrix, annotDF, model_formula_str, projected_patterns,cores)
 })
 
 setMethod("fitGLMpd",signature(object="matrix"), function(object, annotDF, model_formula_str, projected_patterns,cores=1){ #,exp_family="negbinomial",cores,clean_model=T,verbose=T, result = "full_model"){
 
   countsMatrix <- object
 
-  #from provided matrix
-  pattern_names <- colnames(projected_patterns)
-
-  #dependent on SCE structure
-  genes <- rownames(countsMatrix)
-
-  message(paste0("Fittings models for ", length(pattern_names), " patterns and ", length(genes), " genes"))
-  if(sum(rowSums(countsMatrix)== 0) > 0){
-    warnings(paste0(sum(rowSums(countsMatrix)== 0), " genes have zero expression and will not be successfully fit. It is recommended to remove them before running."))
-  }
-
-  #Not actually sure what these do... other than limit conflicts with furrr multicore operations
-  RhpcBLASctl::omp_set_num_threads(1)
-  RhpcBLASctl::blas_set_num_threads(1)
-
-  #uses future parallelization structure
-  #open multicore operations
-  plan(multicore, workers = cores)
-  full_glm_models <- furrr::future_map(pattern_names, function(pattern_name){
-    message(paste0(date(),": working on pattern ",pattern_name))
-    thisPatt <- projected_patterns[,pattern_name]
-
-    #fit one pattern, all genes
-    glm_model <- apply(countsMatrix,1,fit_helper,thisPattern=thisPatt,model_formula_string=model_formula_str,annotDF=annotDF)
-
-    return(glm_model)
-  })
-
-  #close multicore operations
-  plan(sequential)
-
-  names(full_glm_models) <- pattern_names
-
-  return(full_glm_models)
+  .fitGLM(countsMatrix, annotDF, model_formula_str, projected_patterns,cores)
 })
 
 
