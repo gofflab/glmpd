@@ -47,11 +47,20 @@
     thisPatt <- projected_patterns[,pattern_name]
 
     #fit one pattern, all genes
-    glm_model <- apply(countsMatrix,1,fit_helper,thisPattern=thisPatt,model_formula_string=model_formula_str,annotDF=annotDF)
+    glm_models <- apply(countsMatrix,1,fit_helper,thisPattern=thisPatt,model_formula_string=model_formula_str,annotDF=annotDF)
+
+    #FIXME: JS: Isn't the length of this always the number of genes? When would length be less than 1?
+    #tranpose lists to create a dataframe, each row is a gene
+    successfulModels <- glm_models[unlist(lapply(glm_models,length)) > 1]
+    glm_models_df <- tibble::as_tibble(purrr::transpose(successfulModels)) %>%
+      dplyr::mutate(id = names(successfulModels))
+
+    #TODO: Add in gene fData. Needs to be passed from first call to sc specific model fitting.
+
 
     #if(result == "full_model"){
     #returns tibble with a column that includes full model for each gene. memory hog
-    return(glm_model)
+    return(glm_models_df)
     #}
 
     #return coefficients, estimates, [anything else] to be easier on memory. Create a multitiered list.
@@ -393,12 +402,13 @@ coeff_table_glmpd <- function(fits){
   # one coefficient table per pattern
   for (pattFitI in (1:length(fits)))
   {
-    models <- fits[[pattFitI]]
+    models_df <- fits[[pattFitI]]
 
-    successfulModels <- models[unlist(lapply(models,length)) > 1]
-    fm <- tibble::as_tibble(purrr::transpose(successfulModels))
-    fm_named = fm %>% dplyr::mutate(id = names(successfulModels))
-    M_f = fm_named %>% dplyr::mutate(terms = purrr::map2(.f = purrr::possibly(extractCoeffHelper_glm_nb,NA_real_), .x=model, .y= model_summary)) %>% tidyr::unnest(terms)
+    # successfulModels <- models[unlist(lapply(models,length)) > 1]
+    # fm <- tibble::as_tibble(purrr::transpose(successfulModels))
+    # fm_named = fm %>% dplyr::mutate(id = names(successfulModels))
+    #
+    M_f = models_df %>% dplyr::mutate(terms = purrr::map2(.f = purrr::possibly(extractCoeffHelper_glm_nb,NA_real_), .x=model, .y= model_summary)) %>% tidyr::unnest(terms)
     fit_coefs = M_f %>% dplyr::group_by(model_component, term) %>%
       dplyr::mutate(q_value = stats::p.adjust(p_value)) %>%
       dplyr::ungroup()

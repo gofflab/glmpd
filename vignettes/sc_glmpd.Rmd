@@ -48,6 +48,7 @@ projected_weights <- read.csv("../inst/extdata/6mo_LMMP_cell_size_log_in_TC_LMMP
 
 ## Prepare the cell data set and projection values for the model fittings
 ```{r prepare_cds}
+#TODO: All of this is unneccesary for a vignette. do the prep and downsampling before. 
 #pattern # to project
 select_patterns <- c(27,43)
 projected_weights <- projected_weights[paste0("cellPattern", select_patterns)]
@@ -69,12 +70,12 @@ cds_sub <- cds[fData(cds)$gene_id %in% genes_of_interest,]
 set.seed(208)
 downsample <- 1
 if(downsample){
-  num_genes <- 200
+  num_genes <- 15
   down_gene <- sample(dim(cds_sub)[1], num_genes)
-  num_cells <- 2000
-  down_cell <- sample(dim(cds_sub)[2], num_cells)
+  # num_cells <- 40
+  # down_cell <- sample(dim(cds_sub)[2], num_cells)
   
-  cds_sub <- cds_sub[down_gene,down_cell]
+  cds_sub <- cds_sub[down_gene,]
   
   #character vector of final gene names
   genes_of_interest <- fData(cds_sub)[,"gene_id"]
@@ -85,7 +86,7 @@ cds_sub
 ## Declare the model formula and run model fittings
 ```{r run_model_fit, warning = F}
 #patternWeight is hard-coded in the fit_models_cds function to be the p-weights column provided
-model_str <- paste0("~0 + patternWeight:cell_type + cell_type")
+model_str <- paste0("~0 + patternWeights:cell_type + cell_type")
 
 #specify parameters for fittings
 exp_family <- "negbinomial"
