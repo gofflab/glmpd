@@ -15,8 +15,7 @@ This workbook demonstrates the workflow and data structures associated with perf
 
 #These will be loaded with the package once it is installed
 #Directories are relative to this .Rmd file in vignettes folder
-source("../R/model_fitting.R")
-source("../R/visualization.R")
+require(glmpd)
 
 
 require(monocle3)
@@ -37,6 +36,7 @@ require(RhpcBLASctl)
 
 ```{r import}
 #dataset to project into patterns
+#TODO: is there a "package" way to load this
 cds <- readRDS("../inst/extdata/6month_LMMP.rds")
 
 #p-weights resulting from projection with projectR
@@ -94,14 +94,16 @@ ncores = 1
 #return the full glm output
 return_option <- "full_model"
 
-system.time(glm_models_list <- fit_model_cds(cds = cds_sub,
+system.time(glm_models_list <- glmpd::fitGLMpd(object = cds_sub,
                                              model_formula_str = model_str,
                                              projected_patterns = projected_weights,
-                                             exp_family = exp_family,
-                                             cores = ncores,
-                                             clean_model = F,
-                                             verbose = T,
-                                             result = return_option))
+                                             
+                                             cores = ncores))
+                                             # TODO: old parameters that need to be added back
+                                             # exp_family = exp_family,
+                                             # clean_model = F,
+                                             # verbose = T,
+                                             # result = return_option))
 
 class(glm_models_list)
 length(glm_models_list)
