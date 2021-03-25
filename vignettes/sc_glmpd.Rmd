@@ -70,7 +70,7 @@ cds_sub <- cds[fData(cds)$gene_id %in% genes_of_interest,]
 set.seed(208)
 downsample <- 1
 if(downsample){
-  num_genes <- 15
+  num_genes <- 5
   down_gene <- sample(dim(cds_sub)[1], num_genes)
   # num_cells <- 40
   # down_cell <- sample(dim(cds_sub)[2], num_cells)

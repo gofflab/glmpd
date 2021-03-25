@@ -8,6 +8,7 @@
 #' Parallelizes across patterns in a matrix of projected patterns
 #' @param countsMatrix matrix of gene expression counts. genes x cells / samples.
 #' @param annotDF A dataframe with annotations for each cell or sample in the gene expression dataset
+#' @param geneDF (currently) optional dataframe with annotations for each gene in the dataset
 #' @param model_formula_str A string specifying the model to fit, in the format "~ var1 + var2"
 #' @param projected_patterns A matrix of projected pattern weights to use as an explanatory variable in the model fit for each gene. colnames are patterns, rownames are cells. Must have viable column names.
 #' @param cores Integer defining the number of cores to use for parallelization of model fitting across genes.
@@ -19,10 +20,11 @@
 #' @return Returns a list of fitted models (output similar to monocle3::fit_model)
 #' @import monocle3
 #' @import MASS
+#' @import Matrix
 #' @import RhpcBLASctl
 #' @import future
 #' @import furrr
-.fitGLM <- function(countsMatrix, annotDF, model_formula_str, projected_patterns, cores){
+.fitGLM <- function(countsMatrix, annotDF, model_formula_str, projected_patterns, cores, geneDF= NULL){
 
   #from provided matrix
   pattern_names <- colnames(projected_patterns)
@@ -49,14 +51,19 @@
     #fit one pattern, all genes
     glm_models <- apply(countsMatrix,1,fit_helper,thisPattern=thisPatt,model_formula_string=model_formula_str,annotDF=annotDF)
 
-    #FIXME: JS: Isn't the length of this always the number of genes? When would length be less than 1?
     #tranpose lists to create a dataframe, each row is a gene
-    successfulModels <- glm_models[unlist(lapply(glm_models,length)) > 1]
-    glm_models_df <- tibble::as_tibble(purrr::transpose(successfulModels)) %>%
-      dplyr::mutate(id = names(successfulModels))
+    #TODO: status extractor "success" or "fail"
+    glm_models_df <- tibble::as_tibble(purrr::transpose(glm_models))
 
-    #TODO: Add in gene fData. Needs to be passed from first call to sc specific model fitting.
-
+    #Add in gene fData to returned dataframe. Currently optional.
+    if(!is.null(geneDF)){
+      #TODO might need to assert length or gene names are the same. don't love the assumption they are the same.
+      glm_models_df <- dplyr::bind_cols(geneDF, glm_models_df)
+    }else{
+      #TODO: JS: would names(glm_models) ever not be "genes" var from above? would be clearer
+      glm_models_df <- glm_models_df %>%
+        dplyr::mutate(gene_id = names(glm_models))
+    }
 
     #if(result == "full_model"){
     #returns tibble with a column that includes full model for each gene. memory hog
@@ -120,7 +127,8 @@ fit_helper <- function(thisGene, thisPattern, model_formula_string, annotDF){
     FM_summary = summary(FM_fit)
     df = list(model = FM_fit, model_summary = FM_summary)
   }, error = function(e){
-    return(conditionMessage(e)) # return error messages; don't stop iterating (wondering if this is the best way to handle errors)
+    error_df <- list(model = NA, model_summary = NA)
+    return(error_df) # return error messages; don't stop iterating (wondering if this is the best way to handle errors)
   })
 }
 
@@ -138,20 +146,23 @@ fit_helper <- function(thisGene, thisPattern, model_formula_string, annotDF){
 #'
 #' @return Returns a list of fitted models (output similar to monocle3::fit_model)
 #' @import monocle3
+#' @import SummarizedExperiment
 #' @export
 #'
 # #' @examples
 setGeneric("fitGLMpd", function(object, ..., verbose=TRUE) standardGeneric("fitGLMpd"),
            signature = "object")
 
-setMethod("fitGLMpd",signature(object="cell_data_set"), function(object, model_formula_str, projected_patterns,cores=1){ #,exp_family="negbinomial",cores,clean_model=T,verbose=T, result = "full_model"){
 
+setMethod("fitGLMpd",signature(object="cell_data_set"), function(object, model_formula_str, projected_patterns,cores=1, geneDF = NULL){ #,exp_family="negbinomial",cores,clean_model=T,verbose=T, result = "full_model"){
+  #TODO: also accept SingleCellExperiment (and SummarizedExperiment?)
   cds <- object
 
-  countsMatrix <- exprs(cds)
-  annotDF <- pData(cds)
+  countsMatrix <- counts(cds)
+  annotDF <- colData(cds) %>% as.data.frame()
+  geneDF <- rowData(cds) %>% as.data.frame()
 
-  .fitGLM(countsMatrix, annotDF, model_formula_str, projected_patterns,cores)
+  .fitGLM(countsMatrix, annotDF, model_formula_str, projected_patterns,cores, geneDF)
 })
 
 setMethod("fitGLMpd",signature(object="matrix"), function(object, annotDF, model_formula_str, projected_patterns,cores=1){ #,exp_family="negbinomial",cores,clean_model=T,verbose=T, result = "full_model"){
@@ -162,7 +173,7 @@ setMethod("fitGLMpd",signature(object="matrix"), function(object, annotDF, model
 })
 
 
-#' Extract coefficients from model fitting object
+#' Extract coefficients from model fitting object. Each object of list requires a column exactly named "gene_id".
 #' @param glm_models List (over patterns) of objects returned from "full_result" of fit_models_cds. Organizes each pattern by gene.
 #' @param genes ensembl gene ids that exactly match those which were provided to fit_models_cds
 #' @return Returns a list of fitted models (output similar to monocle3::fit_model)
