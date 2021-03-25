@@ -31,8 +31,8 @@
   genes <- rownames(countsMatrix)
 
   message(paste0("Fittings models for ", length(pattern_names), " patterns and ", length(genes), " genes"))
-  if(sum(rowSums(countsMatrix)== 0) > 0){
-    warnings(paste0(sum(rowSums(countsMatrix)== 0), " genes have zero expression and will not be successfully fit. It is recommended to remove them before running."))
+  if(sum(Matrix::rowSums(countsMatrix)== 0) > 0){
+    warnings(paste0(sum(Matrix::rowSums(countsMatrix)== 0), " genes have zero expression and will not be successfully fit. It is recommended to remove them before running."))
   }
 
   #Not actually sure what these do... other than limit conflicts with furrr multicore operations
