@@ -122,7 +122,7 @@ fit_helper <- function(thisGene, thisPattern, model_formula_string, annotDF){
   # run model
   tryCatch({
     FM_fit <- glm.nb(model_formula,
-                     data = datFrame, link = log,
+                     data = datFrame, link = log, epsilon = 1e-3,
                      control = glm.control(maxit = 50))
     FM_summary = summary(FM_fit)
     df = list(model = FM_fit, model_summary = FM_summary)
@@ -154,13 +154,16 @@ setGeneric("fitGLMpd", function(object, ..., verbose=TRUE) standardGeneric("fitG
            signature = "object")
 
 
-setMethod("fitGLMpd",signature(object="cell_data_set"), function(object, model_formula_str, projected_patterns,cores=1, geneDF = NULL){ #,exp_family="negbinomial",cores,clean_model=T,verbose=T, result = "full_model"){
+setMethod("fitGLMpd",signature(object="cell_data_set"), function(object, model_formula_str, projected_patterns,cores=1, count_assay = "counts", geneDF = NULL){ #,exp_family="negbinomial",cores,clean_model=T,verbose=T, result = "full_model"){
   #TODO: also accept SingleCellExperiment (and SummarizedExperiment?)
   cds <- object
 
-  countsMatrix <- counts(cds)
+  countsMatrix <- assay(cds, count_assay)
   annotDF <- colData(cds) %>% as.data.frame()
-  geneDF <- rowData(cds) %>% as.data.frame()
+
+  if(is.null(geneDF)){
+    geneDF <- rowData(cds) %>% as.data.frame()
+  }
 
   .fitGLM(countsMatrix, annotDF, model_formula_str, projected_patterns,cores, geneDF)
 })
