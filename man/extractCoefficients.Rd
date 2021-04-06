@@ -2,18 +2,20 @@
 % Please edit documentation in R/model_fitting.R
 \name{extractCoefficients}
 \alias{extractCoefficients}
-\title{Extract coefficients from model fitting object}
+\title{extractCoefficients
+Extract coefficients from model fitting object. Each object of list requires a column exactly named "gene_id".}
 \usage{
 extractCoefficients(glm_models, genes)
 }
 \arguments{
-\item{glm_models}{List (over patterns) of objects returned from "full_result" of fit_models_cds. Organizes each pattern by gene.}
+\item{glm_models}{Named List (over patterns) of objects returned from "full_result" of fit_models_cds. Organizes each pattern by gene.}
 
-\item{genes}{ensembl gene ids that exactly match those which were provided to fit_models_cds}
+\item{genes}{gene ids that exactly match the count matrix which was provided to fitGLMpd()}
 }
 \value{
-Returns a list of fitted models (output similar to monocle3::fit_model)
+Returns a mutileveled list of fitted model coefficients. Hierarchy of organization: pattern (list), gene (list), coefficients (data.frame)
 }
 \description{
-Extract coefficients from model fitting object
+extractCoefficients
+Extract coefficients from model fitting object. Each object of list requires a column exactly named "gene_id".
 }

@@ -172,16 +172,21 @@ setMethod("fitGLMpd",signature(object="matrix"), function(object, annotDF, model
   .fitGLM(countsMatrix, annotDF, model_formula_str, projected_patterns,cores)
 })
 
+###########################################################
+# Functions for organizing model coefficients by genes
+###########################################################
 
+
+#' extractCoefficients
 #' Extract coefficients from model fitting object. Each object of list requires a column exactly named "gene_id".
-#' @param glm_models List (over patterns) of objects returned from "full_result" of fit_models_cds. Organizes each pattern by gene.
-#' @param genes ensembl gene ids that exactly match those which were provided to fit_models_cds
-#' @return Returns a list of fitted models (output similar to monocle3::fit_model)
+#' @param glm_models Named List (over patterns) of objects returned from "full_result" of fit_models_cds. Organizes each pattern by gene.
+#' @param genes gene ids that exactly match the count matrix which was provided to fitGLMpd()
+#' @return Returns a mutileveled list of fitted model coefficients. Hierarchy of organization: pattern (list), gene (list), coefficients (data.frame)
 #' @import monocle3
 #' @import dplyr
+#' @import purrr
 #' @export
 #'
-# #' @examples
 #TODO: assert genes length is the same as glm_models. Allow for "gene_id" to be set manually to allow other columns to match genes on.
 #TODO: is there a way to get gene names from models instead of providing... limit misnaming error ... also assumes orders are the same as is
 #Generates a multi-leveled list.
@@ -206,24 +211,22 @@ extractCoefficients <- function(glm_models, genes){
   })
 }
 
-
+#' orderCoefficientsByGene
 #' Order model coefficient estimates by genes, such as for visualization by heatmap
-#' @param pattern_coefficient_list List (over patterns) of objects returned from "summarized_result" of fit_models_cds(), or extractCoefficients().
-#' @param coefficients_to_keep optional. limit returned dataframe to coefficients of interest.
-#' @param filter_significance Numeric value at which to q-value significance. If not provided, all genes returned.
-#' @param string optional. all parameters that contain this string will be used for signficance filtering.
+#' @param pattern_coefficient_list List (over patterns) of objects returned from extractCoefficients(), or "summarized_result" option of fit_models_cds().
+#' @param model_terms_to_keep optional. limit returned dataframe to coefficients of interest.
+#' @param filter_significance optional. Numeric value at which to filter q-value significance.
+#' Genes with signficant coefficients for one or more  terms are returned. If not provided, all genes returned.
+#' @param string optional. all model terms that contain this string will be used for signficance filtering.
 #' @return Returns a list of fitted models (output similar to monocle3::fit_model)
 #' @import dplyr
 #' @import tibble
 #' @export
 #'
-# #' @examples
 #Pass extracted coefficients to organize into a data frame with each gene as as a row ----
-#input is the output from extractCoefficients(), named list of lists, patterns then nested genes
 #TODO: Can make this more elegant with dplyr instead of lapply
 #TODO: filter out failed genes
-#TODO: Add Roxygen2 parameters
-orderCoefficientsByGene <- function(pattern_coefficient_list, coefficients_to_keep = NULL, filter_significance, string){
+orderCoefficientsByGene <- function(pattern_coefficient_list, model_terms_to_keep = NULL, filter_significance, string){
   pattern_full_names <- names(pattern_coefficient_list)
   #loop thru each pattern
   params_list <- lapply(pattern_full_names, function(pattern_full_name){
@@ -237,15 +240,19 @@ orderCoefficientsByGene <- function(pattern_coefficient_list, coefficients_to_ke
       param <- data.frame("gene_id" = gene)
 
       #extract all parameters of interest. "term" is parameter name, "estimate" is the estimated beta value
-      try(param <- pattern_coefficient_list[[pattern_full_name]][[gene]] %>% dplyr::select(any_of(c("term","estimate","std_err","p_value","q_value","test_val"))) %>%
-            tibble::column_to_rownames(var = "term") %>% t() %>% as.data.frame() %>%
+      try(param <- pattern_coefficient_list[[pattern_full_name]][[gene]] %>%
+            dplyr::select(any_of(c("term","estimate","std_err","p_value","q_value","test_val"))) %>%
+            tibble::column_to_rownames(var = "term") %>%
+            t() %>%
+            as.data.frame() %>%
             tibble::rownames_to_column(var = "measure") %>%
             mutate("gene_id" = gene)
       )
 
       #if provided, restrict parameters to only these
-      if(!is.null(coefficients_to_keep)){
-        param <- param %>% dplyr::select(any_of(coefficients_to_keep))
+      if(!is.null(model_terms_to_keep)){
+        param <- param %>%
+          dplyr::select(any_of(model_terms_to_keep))
       }
 
       #check if the minimum q-value for a gene is significant. If none are significant, return null to get rid of gene in df
@@ -253,9 +260,14 @@ orderCoefficientsByGene <- function(pattern_coefficient_list, coefficients_to_ke
       if(!is.null(filter_significance)){
         #pre-empt failure (Why would this fail? gene doesn't exist?)
         min_q <- 1
-        try(min_q <- param %>% filter(measure == "q_value") %>% dplyr::select(matches(string)) %>% min())
-        #not significant
+        try(min_q <- param %>%
+              filter(measure == "q_value") %>%
+              dplyr::select(matches(string)) %>%
+              min())
+
+
         if(min_q > filter_significance){
+          #not significant
           return(NULL)
         }
       }
@@ -266,7 +278,11 @@ orderCoefficientsByGene <- function(pattern_coefficient_list, coefficients_to_ke
 
 
     #generate for each pattern a df, with tibbles for each parameter. allows for filtering on qvalue etc
-    tbl <- bind_rows(param_df) %>% group_by(measure) %>% nest() %>% ungroup()
+    tbl <- bind_rows(param_df) %>%
+      group_by(measure) %>%
+      nest() %>%
+      ungroup()
+
     return(tbl)
   })
 
@@ -276,14 +292,28 @@ orderCoefficientsByGene <- function(pattern_coefficient_list, coefficients_to_ke
   return(params_list)
 }
 
-##functionalize making of heatmap matrix
+#' organizeEstimates
+#' Generate matrices of coefficients of interest for later plotting with heatmaps.
+#' @param coefficients_list List (over patterns) of objects returned from orderCoefficientByGene()
+#' @param terms_exact String. Names of terms to plot which exactly match the terms of the model.
+#' @param terms_match String. specify beginning string to match terms to plot. Necessary for interaction terms.
+#' @param feature which feature to pull from the model. Default ["estimate"] is beta. Options include "q_value"...
+#' @param gene_name name of column which contains gene names. Default ["gene_id"]
+#' @param tranpose boolean. Should matrices be tranposed. Default [F] returns genes as rows.
+#' @return Returns a list of matrices.
+#' @import dplyr
+#' @import tibble
+#' @import purrr
+#' @export
+#'
 ##coefficients_list should be output from orderCoefficientsByGene(). List for each pattern, containing a tibble with estimate, std error, pvalue...
 ##with tranpose = F (default), rownames are genes, colnames are model parameters
 organizeEstimates <- function(coefficients_list, terms_exact, terms_match, feature = "estimate", gene_name = "gene_id", transpose = F){
 
   param_list <- purrr::map(names(coefficients_list), function(pattern_name){
     #contains tibbles for each measure, eg. estimate, std error, p-value.
-    gene_coef_df<- coefficients_list[[pattern_name]] %>% filter(measure == feature) %>%
+    gene_coef_df<- coefficients_list[[pattern_name]] %>%
+      dplyr::filter(measure == feature) %>%
       dplyr::select(data) %>%
       unnest(cols =data)
 
@@ -304,7 +334,10 @@ organizeEstimates <- function(coefficients_list, terms_exact, terms_match, featu
 
     #organize coefficients for these parameters, match parameter name exactly
     exact_parameters <- purrr::map(terms_exact, function(term){
-      exact <- gene_coef_df %>% dplyr::select(c(all_of(term),all_of(gene_name))) %>% column_to_rownames(var = gene_name) %>% as.matrix()
+      exact <- gene_coef_df %>%
+        dplyr::select(c(all_of(term),all_of(gene_name))) %>%
+        column_to_rownames(var = gene_name) %>%
+        as.matrix()
 
       exact <- exact[,order(colnames(exact))]
       if(transpose){

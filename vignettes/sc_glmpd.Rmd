@@ -47,6 +47,7 @@ projected_weights <- read.csv("../inst/extdata/6mo_LMMP_cell_size_log_in_TC_LMMP
 ```
 
 ## Prepare the cell data set and projection values for the model fittings
+Important steps include removing genes with zero (low) counts that will not produce good fittings and will increase run time. 
 ```{r prepare_cds}
 #TODO: All of this is unneccesary for a vignette. do the prep and downsampling before. 
 #pattern # to project
@@ -84,6 +85,7 @@ if(downsample){
 cds_sub
 ```
 ## Declare the model formula and run model fittings
+Using standard R notation for defining models, the flexible 
 ```{r run_model_fit, warning = F}
 #patternWeight is hard-coded in the fit_models_cds function to be the p-weights column provided
 model_str <- paste0("~0 + patternWeights:cell_type + cell_type")
@@ -129,6 +131,7 @@ purrr::pluck(extracted_coefficients_list, paste0("cellPattern",select_patterns[1
 ```
 
 ## Re-organize by creating a data frame for each "measurement" from the model
+A measurement for each term can be the beta estimates (estimate), the standard error (std_error), or statistical significance (q_value)
 ```{r order_by_gene}
 
 #filter significance will filter genes to ones that are signficant (q-value) at the provided threshold (eg 0.05).

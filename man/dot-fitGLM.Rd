@@ -7,7 +7,14 @@ This function parallelizes glm models:
 Parallelizes across genes in a counts matrix
 Parallelizes across patterns in a matrix of projected patterns}
 \usage{
-.fitGLM(countsMatrix, annotDF, model_formula_str, projected_patterns, cores)
+.fitGLM(
+  countsMatrix,
+  annotDF,
+  model_formula_str,
+  projected_patterns,
+  cores,
+  geneDF = NULL
+)
 }
 \arguments{
 \item{countsMatrix}{matrix of gene expression counts. genes x cells / samples.}
@@ -19,6 +26,8 @@ Parallelizes across patterns in a matrix of projected patterns}
 \item{projected_patterns}{A matrix of projected pattern weights to use as an explanatory variable in the model fit for each gene. colnames are patterns, rownames are cells. Must have viable column names.}
 
 \item{cores}{Integer defining the number of cores to use for parallelization of model fitting across genes.}
+
+\item{geneDF}{(currently) optional dataframe with annotations for each gene in the dataset}
 
 \item{exp_family}{The regression family to use (default: 'negbinomial')}
 
